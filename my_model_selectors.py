@@ -74,10 +74,23 @@ class SelectorBIC(ModelSelector):
 
         :return: GaussianHMM object
         """
+        
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        max_val = float("inf")
+        best_model = None
+        for n in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                p = n * (n-1) + (n-1) + 2 * self.X.shape[1] * n
+                bic_score = (-2 * logL) + (p * np.log(self.X.shape[0]))
+                if bic_score < max_val:
+                    max_val = bic_score
+                    best_model = model
+            except:
+                pass
+        return best_model
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
 
 
 class SelectorDIC(ModelSelector):
@@ -92,18 +105,49 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        
+        min_val = float("-inf")
+        best_model = None
+        for n in range(self.min_n_components, self.max_n_components+1):
+            try:
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                total_other_logL = 0
+                for word in self.words:
+                    other_x, other_lengths = self.hwords[word]
+                    total_other_logL += model.score(other_x, other_lengths)
+                avg_logL = total_other_logL/(len(self.words)-1)
+                dic_score = logL - avg_logL
+                if dic_score > min_val:
+                    min_val = dic_score
+                    best_model = model
+            except:
+                continue
+        return best_model
 
 
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
-
     '''
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        mean_scores = []
+        split_method = KFold()
+        
+        try:
+            for n_component in self.n_components:
+                model = self.base_model(n_component)
+                
+                fold_scores = []
+                for _, test_idx in split_method.split(self.sequences):
+                    test_X, test_length = combine_sequences(test_idx, self.sequences)
+                    fold_scores.append(model.score(test_X, test_length))
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+                mean_scores.append(np.mean(fold_scores))
+        
+        except Exception as e:
+            pass
+
+        states = self.n_components[np.argmax(mean_scores)] if mean_scores else self.n_constant
+        return self.base_model(states)
